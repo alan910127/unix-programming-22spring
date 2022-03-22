@@ -12,10 +12,13 @@ int main(int argc, char** argv) {
     checkArguments(argc, argv);
     auto pids{ getPIDs() };
 
-    sort(pids.begin(), pids.end());
+    std::sort(pids.begin(), pids.end());
 
     std::vector<Record> records;
+
     for (auto pid : pids) {
+        std::vector<Record> pidRecords;
+
         auto dir{ format("/proc/%d/", pid) };
 
         auto command{ getCommand(dir + "comm") };
@@ -45,7 +48,7 @@ int main(int argc, char** argv) {
                 path = getName(path);
             }
 
-            records.emplace_back(command, pid, username, fd, type, inode, path, !st);
+            pidRecords.emplace_back(command, pid, username, fd, type, inode, path, !st);
         }
 
         { // maps
@@ -59,8 +62,10 @@ int main(int argc, char** argv) {
                 int inode;
                 std::stringstream ss{ line };
                 ss >> address >> perms >> offset >> dev >> inode >> pathname;
+
                 std::string temp{};
                 while (ss >> temp) pathname += " " + temp;
+
                 if (maps.find({ inode, pathname }) == maps.end()) { // not occurred
                     maps[{ inode, pathname }] = ++seqnum;
                 }
@@ -82,8 +87,8 @@ int main(int argc, char** argv) {
                 if (!st) continue;
                 auto type{ getType(*st) };
 
-                if (records.back().inode == inode && records.back().filename == pathname) continue;
-                records.emplace_back(command, pid, username, fd, type, st ? inode : -1, pathname);
+                if (pidRecords.back().inode == inode && pidRecords.back().filename == pathname) continue;
+                pidRecords.emplace_back(command, pid, username, fd, type, st ? inode : -1, pathname);
             }
         }
 
@@ -91,8 +96,8 @@ int main(int argc, char** argv) {
             auto path{ format("/proc/%d/fd", pid) };
             DIR* dp{ opendir(path.c_str()) };
             if (dp == nullptr) {
-                if (errno != EACCES) err_quit("opendir");
-                records.emplace_back(command, pid, username, "NOFD", "", -1, path, true);
+                if (errno != EACCES) continue;
+                pidRecords.emplace_back(command, pid, username, "NOFD", "", -1, path, true);
                 continue;
             }
 
@@ -118,8 +123,10 @@ int main(int argc, char** argv) {
                     filename.erase(filename.length() - 10);
                 }
 
-                records.emplace_back(command, pid, username, (acc > 0) ? fd : "", type, inode, filename);
+                pidRecords.emplace_back(command, pid, username, (acc > 0) ? fd : "", type, inode, filename);
             }
+
+            records.insert(records.end(), pidRecords.begin(), pidRecords.end());
         }
     }
 

@@ -8,6 +8,7 @@
 #include <regex>
 #include <set>
 #include <map>
+#include <algorithm>
 
 #include "utils.hpp"
 #include "wrapped.hpp"
