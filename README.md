@@ -2,6 +2,6 @@
 
 ## Homework 1 - `lsof`
 
-## Homework 2 - `LD_PRELOAD`
+## Homework 2 - `logger`
 
-Make an shared object dynamic library to monitor functions that are called by other programs.
+Make an shared object dynamic library to monitor functions that are called by other programs using `LD_PRELOAD`.
