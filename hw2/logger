@@ -1,0 +1,45 @@
+#!/bin/sh
+
+usage() {
+    echo 'usage: ./logger [-o file] [-p sopath] [--] cmd [cmd args ...]'
+    echo "       -p: set the path to logger.so, default = ./logger.so"
+    echo "       -o: print output to file, print to \"stderr\" if no file specified"
+    echo "       --: separate the arguments for logger and for the command"
+}
+
+BASEDIR=$(dirname $0)
+path="${BASEDIR}/logger.so"
+
+while getopts ":p:o:" opt; do 
+    case ${opt} in
+    p)
+        path=${OPTARG}
+        ;;
+    o)
+        output=${OPTARG}
+        ;;
+    ?)
+        echo "$0: invalid option -- '${OPTARG}'"
+        usage
+        exit 1
+        ;;
+    esac
+done
+shift $(expr ${OPTIND} - 1)
+
+if [ -z "$*" ]; then
+    echo 'no command given.'
+    exit 1
+else
+    if [ "$1" = "--" ]; then
+        shift
+    fi
+    cmd="$*"
+fi
+
+
+if [ -z "${output}" ]; then
+    LD_PRELOAD=${path} ${cmd}
+else
+    LD_PRELOAD=${path} ${cmd} 2> "${BASEDIR}/${output}"
+fi
