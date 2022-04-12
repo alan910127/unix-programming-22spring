@@ -9,6 +9,7 @@ TARGET = logger.so hw2
 .PHONY: all clean
 
 all: ${TARGET}
+	chmod +x ./logger
 
 logger.so: ${LIBOBJ}
 	${CC} $^ ${SOFLAGS} -o $@
