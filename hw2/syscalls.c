@@ -8,7 +8,6 @@
 
 int open(const char* path, int oflag, ...) {
     static int (*oldfunc)(const char*, int, ...) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("open");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -32,7 +31,6 @@ int open(const char* path, int oflag, ...) {
 
 int close(int fd) {
     static int (*oldfunc)(int) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("close");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -49,7 +47,6 @@ int close(int fd) {
 
 int creat(const char* pathname, mode_t mode) {
     static int (*oldfunc)(const char*, mode_t) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("creat");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -65,7 +62,6 @@ int creat(const char* pathname, mode_t mode) {
 
 ssize_t read(int fildes, void* buf, size_t nbyte) {
     static ssize_t(*oldfunc)(int, void*, size_t) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("read");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -81,7 +77,6 @@ ssize_t read(int fildes, void* buf, size_t nbyte) {
 
 ssize_t write(int fildes, const void* buf, size_t nbyte) {
     static ssize_t(*oldfunc)(int, const void*, size_t) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("write");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -97,7 +92,6 @@ ssize_t write(int fildes, const void* buf, size_t nbyte) {
 
 int remove(const char* pathname) {
     static int (*oldfunc)(const char*) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("remove");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -114,7 +108,6 @@ int remove(const char* pathname) {
 
 int rename(const char* old, const char* new) {
     static int (*oldfunc)(const char*, const char*) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("rename");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -125,7 +118,7 @@ int rename(const char* old, const char* new) {
         char oldname[MAXLINE] = {};
         strncpy(oldname, getAbsPath(old), MAXLINE);
         ret = oldfunc(old, new);
-        fprintf(fp, "[logger] remove(\"%s\", \"%s\") = %d\n", oldname, getAbsPath(new), ret);
+        fprintf(fp, "[logger] rename(\"%s\", \"%s\") = %d\n", oldname, getAbsPath(new), ret);
     }
     return ret;
 }

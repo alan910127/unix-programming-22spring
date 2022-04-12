@@ -2,7 +2,6 @@
 
 FILE* fopen(const char* pathname, const char* mode) {
     static FILE* (*oldfunc)(const char*, const char*) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("fopen");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -18,7 +17,6 @@ FILE* fopen(const char* pathname, const char* mode) {
 
 int fclose(FILE* stream) {
     static int (*oldfunc)(FILE*) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("fclose");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -35,7 +33,6 @@ int fclose(FILE* stream) {
 
 size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream) {
     static size_t(*oldfunc)(void*, size_t, size_t, FILE*) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("fread");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -51,7 +48,6 @@ size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream) {
 
 size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream) {
     static size_t(*oldfunc)(const void*, size_t, size_t, FILE*) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("fwrite");
     if (fp == NULL) fp = fdopen(3, "w");
@@ -67,7 +63,6 @@ size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream) {
 
 FILE* tmpfile(void) {
     static FILE* (*oldfunc)(void) = NULL;
-    static FILE* fp = NULL;
 
     if (oldfunc == NULL) oldfunc = getOldFunc("tmpfile");
     if (fp == NULL) fp = fdopen(3, "w");

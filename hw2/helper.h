@@ -13,6 +13,8 @@
 #define MAX_OUTPUT 32
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
+extern FILE* fp;
+
 void* getOldFunc(const char* function);
 const char* getAbsPath(const char* relativepath);
 const char* getFilename(int fd);

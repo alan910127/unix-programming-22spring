@@ -1,5 +1,7 @@
 #include "helper.h"
 
+FILE* fp = NULL;
+
 void* getOldFunc(const char* function) {
     void* handle = dlopen("libc.so.6", RTLD_LAZY);
     return handle ? dlsym(handle, function) : NULL;
