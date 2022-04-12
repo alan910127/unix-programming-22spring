@@ -13,10 +13,6 @@ int main(int argc, char* argv[]) {
     else if (argc == 4) {
         int fd = creat(argv[3], 0644);
         if (fd < 0) errquit("creat");
-
-        int old = fcntl(fd, F_GETFL);
-        fcntl(fd, F_SETFL, old | O_NONBLOCK);
-
         if (fd != 3) dup2(fd, 3);
     }
     else {
