@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 usage() {
     echo 'usage: ./logger [-o file] [-p sopath] [--] cmd [cmd args ...]'
@@ -7,8 +7,9 @@ usage() {
     echo "       --: separate the arguments for logger and for the command"
 }
 
-BASEDIR=$(dirname $0)
-path="${BASEDIR}/logger.so"
+base=$(dirname $0)
+path=$(realpath "${base}/logger.so")
+prog=$(realpath "${base}/hw2")
 
 while getopts ":p:o:" opt; do 
     case ${opt} in
@@ -39,7 +40,7 @@ fi
 
 
 if [ -z "${output}" ]; then
-    LD_PRELOAD=${path} ${cmd}
+    ${prog} "${cmd}" ${path}
 else
-    LD_PRELOAD=${path} ${cmd} 2> "${BASEDIR}/${output}"
+    ${prog} "${cmd}" ${path} ${output}
 fi

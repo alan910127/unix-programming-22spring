@@ -1,20 +1,23 @@
 CC = gcc
-CFLAGS = -Wall -Wno-unknown-pragmas -ldl
-SOFLAGS = ${CFLAGS} -shared
-OBJFLAGS = ${CFLAGS} -fPIC
+CFLAGS = -Wall
+SOFLAGS = ${CFLAGS} -ldl -shared
+OBJFLAGS = ${CFLAGS} -ldl -fPIC
 
-SOURCE = hw2.c
-OBJECT = $(patsubst %.c, %.o, $(SOURCE))
-TARGET = logger.so
+LIBOBJ = permission.o standards.o syscalls.o helper.o
+TARGET = logger.so hw2
 
 .PHONY: all clean
 
-${TARGET}: ${OBJECT}
+all: ${TARGET}
+
+logger.so: ${LIBOBJ}
 	${CC} $^ ${SOFLAGS} -o $@
+hw2: hw2.c
+	${CC} $^ ${CFLAGS} -o $@
 
 %.o: %.c
 	${CC} $^ ${OBJFLAGS} -c -o $@
 
 clean:
-	-rm ${OBJECT}
+	-rm ${LIBOBJ}
 	-rm ${TARGET}
