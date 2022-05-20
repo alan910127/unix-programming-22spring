@@ -12,12 +12,12 @@ Make an shared object dynamic library to monitor functions that are called by ot
 
 Implement a mini C library to handle several system calls.
 
-- [ ] `setjmp`
-- [ ] `longjmp`
-- [ ] `signal`
-- [ ] `sigaction`
-- [ ] `sigprocmask`
-- [ ] `sigpending`
+- [x] `setjmp`
+- [x] `longjmp`
+- [?] `signal`
+- [?] `sigaction`
+- [?] `sigprocmask`
+- [x] `sigpending`
 - [x] `alarm`
 - [x] `write`
 - [x] `pause`

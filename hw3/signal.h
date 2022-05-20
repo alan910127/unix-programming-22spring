@@ -55,6 +55,33 @@
 #define SIGRTMAX	_NSIG
 #endif
 
+/*
+ * SA_FLAGS values:
+ *
+ * SA_ONSTACK indicates that a registered stack_t will be used.
+ * SA_RESTART flag to get restarting signals (which were the default long ago)
+ * SA_NOCLDSTOP flag to turn off SIGCHLD when children stop.
+ * SA_RESETHAND clears the handler when the signal is delivered.
+ * SA_NOCLDWAIT flag on SIGCHLD to inhibit zombies.
+ * SA_NODEFER prevents the current signal from being masked in the handler.
+ *
+ * SA_ONESHOT and SA_NOMASK are the historical Linux names for the Single
+ * Unix names RESETHAND and NODEFER respectively.
+ */
+#define SA_NOCLDSTOP	0x00000001u
+#define SA_NOCLDWAIT	0x00000002u
+#define SA_SIGINFO	0x00000004u
+#define SA_ONSTACK	0x08000000u
+#define SA_RESTART	0x10000000u
+#define SA_NODEFER	0x40000000u
+#define SA_RESETHAND	0x80000000u
+
+#define SA_NOMASK	SA_NODEFER
+#define SA_ONESHOT	SA_RESETHAND
+
+#define SA_RESTORER	0x04000000
+#define SA_INTERRUPT 0x20000000
+
 #ifndef SIG_BLOCK
 #define SIG_BLOCK          0	/* for blocking signals */
 #endif
@@ -69,6 +96,8 @@ typedef struct {
     unsigned long sig[_NSIG_WORDS];
 } sigset_t;
 
+typedef unsigned long old_sigset_t;		/* at least 32 bits */
+
 typedef void __signalfn_t(int);
 typedef __signalfn_t* __sighandler_t;
 
@@ -80,12 +109,25 @@ typedef __restorefn_t* __sigrestore_t;
 #define SIG_ERR	((__sighandler_t)-1)	/* error return from signal */
 
 struct sigaction {
-    __sighandler_t sa_handler;
-    unsigned long sa_flags;
+#ifndef __ARCH_HAS_IRIX_SIGACTION
+    __sighandler_t	sa_handler;
+    unsigned long	sa_flags;
+#else
+    unsigned int	sa_flags;
+    __sighandler_t	sa_handler;
+#endif
+#ifdef __ARCH_HAS_SA_RESTORER
     __sigrestore_t sa_restorer;
-    sigset_t sa_mask;		/* mask last for extensibility */
+#endif
+    sigset_t	sa_mask;	/* mask last for extensibility */
 };
 
+struct k_sigaction {
+    struct sigaction sa;
+#ifdef __ARCH_HAS_KA_RESTORER
+    __sigrestore_t ka_restorer;
+#endif
+};
 typedef __sighandler_t sighandler_t;
 
 typedef struct jmp_buf_s {
@@ -95,5 +137,7 @@ typedef struct jmp_buf_s {
 
 typedef __SIZE_TYPE__ size_t;
 typedef long int ssize_t;
+
+#define NULL ((void*) 0)
 
 #endif /* _SIGNAL_H */
