@@ -14,9 +14,9 @@ Implement a mini C library to handle several system calls.
 
 - [x] `setjmp`
 - [x] `longjmp`
-- [?] `signal`
-- [?] `sigaction`
-- [?] `sigprocmask`
+- [ ] `signal`
+- [ ] `sigaction`
+- [ ] `sigprocmask`
 - [x] `sigpending`
 - [x] `alarm`
 - [x] `write`
