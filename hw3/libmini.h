@@ -12,7 +12,7 @@ int sigprocmask(int how, const sigset_t* set, sigset_t* oldset);
 int sigpending(sigset_t* set);
 
 void __myrt(void);
-extern int sys_rt_sigaction(int signum, const struct k_sigaction* act, struct k_sigaction* oldact, size_t sigsetsize);
+extern int sys_rt_sigaction(int signum, const struct sigaction* act, struct sigaction* oldact, size_t sigsetsize);
 extern int sys_rt_sigprocmask(int how, const sigset_t* set, sigset_t* oldset, size_t sigsetsize);
 extern int sys_rt_sigpending(sigset_t* set, size_t sigsetsize);
 

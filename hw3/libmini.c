@@ -55,21 +55,11 @@ sighandler_t signal(int signum, sighandler_t handler) {
 
 int sigaction(int signum, struct sigaction* act, struct sigaction* oldact) {
 
-    struct k_sigaction kact = {};
     if (act) {
-        kact.sa = *act;
+        act->sa_flags |= SA_RESTORER;
+        act->sa_restorer = __myrt;
     }
-#ifdef __ARCH_HAS_SA_RESTORER
-    kact.sa.sa_flags |= SA_RESTORER;
-    kact.sa.sa_restorer = __myrt;
-#endif
-
-    struct k_sigaction koldact = {};
-    if (oldact) {
-        koldact.sa = *oldact;
-    }
-
-    long ret = sys_rt_sigaction(signum, act ? &kact : NULL, oldact ? &koldact : NULL, sizeof(sigset_t));
+    long ret = sys_rt_sigaction(signum, act, oldact, sizeof(sigset_t));
     return ret;
 }
 
