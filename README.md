@@ -11,22 +11,3 @@ Make an shared object dynamic library to monitor functions that are called by ot
 ## Homework 3 - Mini C Library
 
 Implement a mini C library to handle several system calls.
-
-- [x] `setjmp`
-- [x] `longjmp`
-- [ ] `signal`
-- [ ] `sigaction`
-- [ ] `sigprocmask`
-- [x] `sigpending`
-- [x] `alarm`
-- [x] `write`
-- [x] `pause`
-- [x] `sleep`
-- [x] `exit`
-- [x] `strlen`
-- [x] `sigemptyset`
-- [x] `sigfillset`
-- [x] `sigaddset`
-- [x] `sigdelset`
-- [x] `sigismember`
- 
