@@ -17,11 +17,11 @@ Implement a mini C library to handle several system calls.
 Implement a simple instruction level debugger which can be use on non-PIE programs by using `ptrace` and `capstone`.
 
 > TODO:
-> - [] break
+> - [ ] break
 > - [x] cont
-> - [] delete
-> - [] disasm
-> - [] dump
+> - [ ] delete
+> - [ ] disasm
+> - [ ] dump
 > - [x] exit
 > - [x] get
 > - [x] getregs
