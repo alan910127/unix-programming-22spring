@@ -14,7 +14,7 @@ Implement a mini C library to handle several system calls.
 
 ## Homework 4 - Instruction Level Debugger
 
-Implement a simple instruction level debugger which can be use on non-PIE programs by using `ptrace` and `capstone`.
+Implement a simple instruction level debugger which can be used on non-PIE programs by using `ptrace` and `capstone`.
 
 > TODO:
 > - [ ] break
