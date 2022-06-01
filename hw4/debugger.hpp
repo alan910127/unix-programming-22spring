@@ -11,6 +11,8 @@
 #include <sys/ptrace.h>
 #include <sys/user.h>
 
+#include <capstone/capstone.h>
+
 #include "utilities.hpp"
 
 enum class State {
@@ -21,8 +23,11 @@ enum class State {
 
 void debugger(std::istream& input);
 void endDebugger();
+#define NEXT_ROUND() { endDebugger(); return; }
 
 bool dbgParseCommand(const std::string& command);
+uint64_t recoverInstruction();
+void putInt3(uint64_t address);
 
 void dbgAddBreakpoint(uint64_t address);
 void dbgContinue();

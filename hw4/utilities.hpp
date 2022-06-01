@@ -80,8 +80,8 @@ void handleArguments(const std::vector<std::string>& args);
 auto quote(const std::string& str)->decltype(std::quoted(std::string{}));
 auto splitString(const std::string& str)->std::vector<std::string>;
 bool iequals(const std::string& lhs, const std::string& rhs);
-ptrdiff_t getRegisterOffset(const std::string& registerName);
 
 bool wait_child(pid_t process);
+ptrdiff_t getRegisterOffset(const std::string& registerName);
 
 #endif // !_UTILITIES_HPP 

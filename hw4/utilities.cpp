@@ -97,5 +97,15 @@ ptrdiff_t getRegisterOffset(const std::string& registerName) {
 bool wait_child(pid_t process) {
     int status;
     if (waitpid(process, &status, 0) < 0) errquit("wait");
+
+    if (WIFEXITED(status)) {
+        std::cerr << "** child process " << process << " terminiated normally (code " << WEXITSTATUS(status) << ")" << std::endl;
+        return false;
+    }
+    if (WIFSIGNALED(status)) {
+        std::cerr << "** child process " << process << " terminiated abnormally (code " << WEXITSTATUS(status) << ")" << std::endl;
+        return false;
+    }
+
     return WIFSTOPPED(status);
 }

@@ -9,17 +9,19 @@ std::map<uint64_t, uint64_t> breakpoints; // address -> code
 void debugger(std::istream& input) {
     std::string command;
 
-    std::cerr << "sdb> ";
-    while (std::getline(input, command)) {
-        dbgParseCommand(command);
+    while (input) {
         std::cerr << "sdb> ";
+        while (std::getline(input, command)) {
+            dbgParseCommand(command);
+            std::cerr << "sdb> ";
+        }
+        endDebugger();
     }
-    endDebugger();
 }
 
 void endDebugger() {
-    std::cerr << "** debugger finished" << std::endl;
-    std::exit(0);
+    kill(process, SIGKILL);
+    currentState = State::LOADED;
 }
 
 bool dbgParseCommand(const std::string& command) {
@@ -83,7 +85,7 @@ bool dbgParseCommand(const std::string& command) {
                 std::cerr << "** 1 arguments expected, got " << numArgs << std::endl;
                 return false;
             }
-            std::get<1>(func)(stoull(args[1]));
+            std::get<1>(func)(stoull(args[1], nullptr, 0));
             break;
         case 2: // void (const std::string&)
             if (numArgs != 1) {
@@ -97,7 +99,7 @@ bool dbgParseCommand(const std::string& command) {
                 std::cerr << "** 2 arguments expected, got " << numArgs << std::endl;
                 return false;
             }
-            std::get<3>(func)(args[1], stoull(args[2]));
+            std::get<3>(func)(args[1], stoull(args[2], nullptr, 0));
             break;
         default:
             std::cerr << "Debugger function error" << std::endl;
@@ -107,12 +109,46 @@ bool dbgParseCommand(const std::string& command) {
     return true;
 }
 
+uint64_t recoverInstruction() {
+
+    auto offset = getRegisterOffset("rip");
+    auto rip = ptrace(PTRACE_PEEKUSER, process, offset, 0);
+
+    auto it = breakpoints.find(rip);
+
+    if (it == breakpoints.end()) {
+        // next instruction is not breakpoint
+        // test whether we are stucked by breakpoint
+        --rip;
+        it = breakpoints.find(rip);
+        if (it == breakpoints.end()) return 0; // neither, return directly
+    }
+
+    auto code = it->second;
+    auto codeInText = ptrace(PTRACE_PEEKTEXT, process, rip, 0);
+    auto codeToRecover = (codeInText & 0xffff'ffff'ffff'ff00) | (code & 0xff); // only recover the byte that is changed to INT3
+
+    if (ptrace(PTRACE_POKETEXT, process, rip, codeToRecover) < 0) errquit("ptrace.POKETEXT@recover");
+
+    return rip;
+}
+
+void putInt3(uint64_t address) {
+    auto code = ptrace(PTRACE_PEEKTEXT, process, address, 0);
+    breakpoints[address] = code;
+
+    auto inserted = (code & 0xffff'ffff'ffff'ff00) | 0xcc;
+    if (ptrace(PTRACE_POKETEXT, process, address, inserted) < 0) errquit("ptrace.POKETEXT@put");
+}
+
 void dbgAddBreakpoint(uint64_t address) {
 
     if (currentState != State::RUNNING) {
         std::cerr << "** no programm is currently running" << std::endl;
         return;
     }
+
+    putInt3(address);
 }
 
 void dbgContinue() {
@@ -122,8 +158,21 @@ void dbgContinue() {
         return;
     }
 
-    ptrace(PTRACE_CONT, process, nullptr, nullptr);
-    if (!wait_child(process)) endDebugger();
+    if (auto rip = recoverInstruction(); rip != 0) {
+        if (ptrace(PTRACE_POKEUSER, process, getRegisterOffset("rip"), rip) < 0) errquit("ptrace.POKEUSER");
+
+        if (ptrace(PTRACE_SINGLESTEP, process, 0, 0) < 0) errquit("ptrace.SINGLESTEP");
+        if (!wait_child(process)) NEXT_ROUND();
+
+        putInt3(rip);
+    }
+
+    ptrace(PTRACE_CONT, process, 0, 0);
+    if (!wait_child(process)) NEXT_ROUND();
+
+    ios_flag_saver ifs{ std::cerr };
+    auto rip = ptrace(PTRACE_PEEKUSER, process, getRegisterOffset("rip"), 0);
+    std::cerr << " ** breakpoint @ = " << std::setw(12) << std::hex << rip - 1 << ": " << breakpoints[rip - 1] << std::endl;
 }
 
 void dbgDeleteBreakpoint(uint64_t breakpointID) {
@@ -149,6 +198,31 @@ void dbgDump(uint64_t address) {
         std::cerr << "** no programm is currently running" << std::endl;
         return;
     }
+
+
+    // assumption: 64-bit, little endian
+    for (int i = 0; i < 5; ++i) {
+        ios_flag_saver ifs{ std::cerr };
+        uint64_t buf[2];
+
+        buf[0] = ptrace(PTRACE_PEEKTEXT, process, address, 0);
+        buf[1] = ptrace(PTRACE_PEEKTEXT, process, address + 8, 0);
+
+        auto ptr = reinterpret_cast<uint8_t*>(buf);
+
+        std::cerr << std::setw(12) << std::right << std::hex << address << ":";
+        for (int j = 0; j < 16; ++j) {
+            std::cerr << ' ' << std::setw(2) << std::setfill('0') << std::hex << (static_cast<short>(ptr[j]) & 0xff);
+        }
+
+        std::cerr << "  |";
+        for (int j = 0; j < 16; ++j) {
+            std::cerr << (std::isprint(ptr[j]) ? static_cast<char>(ptr[j]) : '.');
+        }
+        std::cerr << "|" << std::endl;
+
+        address += 16;
+    }
 }
 
 void dbgTerminate() {
@@ -165,7 +239,7 @@ void dbgGetRegister(const std::string& registerName) {
 
     auto offset = getRegisterOffset(registerName);
 
-    uint64_t reg = ptrace(PTRACE_PEEKUSER, process, offset, nullptr);
+    uint64_t reg = ptrace(PTRACE_PEEKUSER, process, offset, 0);
 
     ios_flag_saver ifs{ std::cerr };
     std::cerr << registerName << " = " << reg << " (0x" << std::hex << reg << ")" << std::endl;
@@ -181,7 +255,7 @@ void dbgGetAllRegister() {
     struct user_regs_struct regs;
     ios_flag_saver ifs{ std::cerr };
 
-    if (ptrace(PTRACE_GETREGS, process, nullptr, &regs) == 0) {
+    if (ptrace(PTRACE_GETREGS, process, 0, &regs) == 0) {
         std::cerr << std::left << std::hex;
         std::cerr << "RAX " << std::setw(16) << regs.rax;
         std::cerr << " RBX " << std::setw(16) << regs.rbx;
@@ -272,15 +346,9 @@ void dbgRun() {
         return;
     }
 
-    if (currentState == State::RUNNING) {
-        std::cerr << "** program " << quote(program) << " is already running" << std::endl;
-    }
-    else {
-        dbgStart();
-    }
-
-    dbgContinue();
+    dbgStart();
     currentState = State::RUNNING;
+    dbgContinue();
 }
 
 void dbgMemoryMap() {
@@ -334,8 +402,23 @@ void dbgStepInstruction() {
         return;
     }
 
-    ptrace(PTRACE_SINGLESTEP, process, nullptr, nullptr);
-    if (!wait_child(process)) endDebugger();
+    if (auto rip = recoverInstruction(); rip != 0) {
+        if (ptrace(PTRACE_POKEUSER, process, getRegisterOffset("rip"), rip) < 0) errquit("ptrace.POKEUSER@si");
+        if (ptrace(PTRACE_SINGLESTEP, process, 0, 0) < 0) errquit("ptrace.SINGLESTEP@si");
+        if (!wait_child(process)) NEXT_ROUND();
+        putInt3(rip);
+    }
+    else {
+        ptrace(PTRACE_SINGLESTEP, process, 0, 0);
+        if (!wait_child(process)) NEXT_ROUND();
+    }
+
+    ios_flag_saver ifs{ std::cerr };
+
+    auto rip = ptrace(PTRACE_PEEKUSER, process, getRegisterOffset("rip"), 0);
+    if (auto it = breakpoints.find(rip); it != breakpoints.end()) {
+        std::cerr << " ** breakpoint @ = " << std::setw(12) << std::hex << it->first << ": " << it->second << std::endl;
+    }
 }
 
 void dbgStart() {
@@ -353,13 +436,13 @@ void dbgStart() {
     if (process < 0) errquit("fork");
 
     if (process == 0) {
-        if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) < 0) errquit("ptrace.traceme");
-        execlp(program.c_str(), program.c_str(), nullptr);
+        if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) errquit("ptrace.TRACEME");
+        execlp(program.c_str(), program.c_str(), 0);
         errquit("exec");
     }
     else {
         std::cerr << "** pid " << process << std::endl;
-        if (!wait_child(process)) endDebugger();
+        if (!wait_child(process)) NEXT_ROUND();
     }
 
     currentState = State::RUNNING;
