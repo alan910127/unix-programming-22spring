@@ -1,20 +1,36 @@
 #include "hw4.hpp"
 
-std::string script;
+std::string program_record;
 
 int main(int argc, char** argv) {
 
     std::vector<std::string> args(argc);
     for (int i = 0; i < argc; ++i) args[i].assign(argv[i]);
 
-    handleArguments(args);
+    auto [script, program] = handleArguments(args);
+    program_record = program;
+
+    std::unique_ptr<Debugger> debugger{};
 
     if (script.empty()) {
-        debugger(std::cin);
+        if (program_record.empty()) {
+            debugger = std::make_unique<Debugger>(std::cin);
+        }
+        else {
+            debugger = std::make_unique<Debugger>(program_record, std::cin);
+        }
+        debugger->mainLoop();
     }
     else {
         std::ifstream fin{ script };
-        debugger(fin);
+
+        if (program_record.empty()) {
+            debugger = std::make_unique<Debugger>(fin);
+        }
+        else {
+            debugger = std::make_unique<Debugger>(program_record, fin);
+        }
+        debugger->mainLoop();
     }
 
     return 0;

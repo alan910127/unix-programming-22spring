@@ -1,10 +1,6 @@
 #include "utilities.hpp"
 #include "debugger.hpp"
 
-extern State currentState;
-extern std::string script;
-extern std::string program;
-
 ios_flag_saver::ios_flag_saver(std::ostream& _stream) : stream{ _stream }, state{ nullptr } {
     state.copyfmt(stream);
 }
@@ -16,32 +12,41 @@ void usage(const std::string& executable, const std::string& message) {
     std::exit(-1);
 }
 
-void handleArguments(const std::vector<std::string>& args) {
-    if (args.size() == 1) return;
+std::pair<std::string, std::string> handleArguments(const std::vector<std::string>& args) {
+    if (args.size() == 1) return {};
+
+    std::pair<std::string, std::string> result{};
 
     for (auto it = std::next(args.begin()); it != args.end(); ++it) {
         if (*it == "-s") {
-            ++it;
-            if (it == args.end()) usage(args.front(), "'-s' option is given but no script provided.");
+            if (++it == args.end()) {
+                usage(args.front(), "'-s' option is given but no script provided.");
+            }
 
-            script = *it;
-            if (access(script.c_str(), R_OK) < 0) errquit("script");
+            if (access(it->c_str(), R_OK) < 0) errquit("script");
+            result.first = *it;
         }
         else if (it->find('-') == 0) {
             std::stringstream ss;
+            ss << "Unknown option: " << std::quoted(*it, '\'');
+
             std::string message;
-            ss << "Unknown option: ";
-            ss << std::quoted(*it, '\'');
             ss >> message;
+
             usage(args.front(), message.c_str());
         }
         else {
-            program = *it;
-            if (access(program.c_str(), R_OK | W_OK | X_OK) < 0) errquit("program");
 
-            dbgLoadProgram(program);
+            if (result.second != "") {
+                usage(args.front(), "too many arguments");
+            }
+
+            if (access(it->c_str(), R_OK | W_OK | X_OK) < 0) errquit("program");
+            result.second = *it;
         }
     }
+
+    return result;
 }
 
 auto quote(const std::string& str) -> decltype(std::quoted(std::string{})) {
@@ -70,7 +75,7 @@ bool iequals(const std::string& lhs, const std::string& rhs) {
 }
 
 ptrdiff_t getRegisterOffset(const std::string& registerName) {
-    ptrdiff_t offset;
+    ptrdiff_t offset{};
 
     if (iequals(registerName, "rax")) offset = offsetof(user_regs_struct, rax);
     else if (iequals(registerName, "rbx")) offset = offsetof(user_regs_struct, rbx);
@@ -92,20 +97,4 @@ ptrdiff_t getRegisterOffset(const std::string& registerName) {
     else std::cerr << "** unknown register" << std::endl;
 
     return offset;
-}
-
-bool wait_child(pid_t process) {
-    int status;
-    if (waitpid(process, &status, 0) < 0) errquit("wait");
-
-    if (WIFEXITED(status)) {
-        std::cerr << "** child process " << process << " terminiated normally (code " << WEXITSTATUS(status) << ")" << std::endl;
-        return false;
-    }
-    if (WIFSIGNALED(status)) {
-        std::cerr << "** child process " << process << " terminiated abnormally (code " << WEXITSTATUS(status) << ")" << std::endl;
-        return false;
-    }
-
-    return WIFSTOPPED(status);
 }

@@ -1,285 +1,142 @@
 #include "debugger.hpp"
 
-State currentState = State::NOT_LOADED;
-std::string program;
-std::variant<ELF32, ELF64> header;
-pid_t process;
-std::map<uint64_t, uint64_t> breakpoints; // address -> code
+extern std::string program_record;
 
-void debugger(std::istream& input) {
-    std::string command;
 
-    while (input) {
-        std::cerr << "sdb> ";
-        while (std::getline(input, command)) {
-            dbgParseCommand(command);
-            std::cerr << "sdb> ";
-        }
-        endDebugger();
-    }
+Debugger::Debugger() :
+    isAlive{ true }, isChildAlive{ false }, isSTDIN{ true }, stream{ std::cin },
+    state{ State::NOT_LOADED }, process{}, program{}, breakpoints{} {
 }
 
-void endDebugger() {
-    kill(process, SIGKILL);
-    currentState = State::LOADED;
+Debugger::Debugger(std::istream& stream) :
+    isAlive{ true }, isChildAlive{ false }, isSTDIN{ false }, stream{ stream },
+    state{ State::NOT_LOADED }, process{}, program{}, breakpoints{} {
 }
 
-bool dbgParseCommand(const std::string& command) {
-    using namespace std::string_literals;
+Debugger::Debugger(const string& program) :
+    isAlive{ true }, isChildAlive{ false }, isSTDIN{ true }, stream{ std::cin },
+    state{ State::NOT_LOADED }, process{}, program{ program }, breakpoints{} {
+    loadProgram(this->program);
+}
 
-    using dbgFuncType = std::variant<void(*)(), void(*)(uint64_t), void(*)(const std::string&), void(*)(const std::string&, uint64_t)>;
+Debugger::Debugger(const string& program, std::istream& stream) :
+    isAlive{ true }, isChildAlive{ false }, isSTDIN{ false }, stream{ stream },
+    state{ State::NOT_LOADED }, process{}, program{ program }, breakpoints{} {
+    loadProgram(this->program);
+}
 
-    static const std::map<std::string, dbgFuncType> functionTable{
-        std::pair{ "break"s, dbgAddBreakpoint },
-        std::pair{ "b"s, dbgAddBreakpoint },
-        std::pair{ "cont"s, dbgContinue },
-        std::pair{ "c"s, dbgContinue },
-        std::pair{ "delete"s, dbgDeleteBreakpoint },
-        std::pair{ "disasm"s, dbgDisasm },
-        std::pair{ "d"s, dbgDisasm },
-        std::pair{ "dump"s, dbgDump },
-        std::pair{ "x"s, dbgDump },
-        std::pair{ "exit"s, dbgTerminate },
-        std::pair{ "q"s, dbgTerminate },
-        std::pair{ "get"s, dbgGetRegister },
-        std::pair{ "g"s, dbgGetRegister },
-        std::pair{ "getregs"s, dbgGetAllRegister },
-        std::pair{ "help"s, dbgHelp },
-        std::pair{ "h"s, dbgHelp },
-        std::pair{ "list"s, dbgListBreakpoint },
-        std::pair{ "l"s, dbgListBreakpoint },
-        std::pair{ "load"s, dbgLoadProgram },
-        std::pair{ "run"s, dbgRun },
-        std::pair{ "r"s, dbgRun },
-        std::pair{ "vmmap"s, dbgMemoryMap },
-        std::pair{ "m"s, dbgMemoryMap },
-        std::pair{ "set"s, dbgSetRegisterValue },
-        std::pair{ "s"s, dbgSetRegisterValue },
-        std::pair{ "si"s, dbgStepInstruction },
-        std::pair{ "start"s, dbgStart }
-    };
+Debugger::~Debugger() {
+    if (this->isChildAlive) kill(this->process, SIGKILL);
+}
 
-    auto args = splitString(command);
+void Debugger::mainLoop() {
 
-    if (args.empty()) return false;
-    const auto& cmd = args.front();
+    while (this->stream) {
+        if (this->isSTDIN) std::cerr << "sdb> ";
+        string line;
 
-    if (auto it = functionTable.find(cmd); it == functionTable.end()) {
-        std::cerr << "** Invalid command: " << quote(cmd) << std::endl;
-        return false;
-    }
-    else {
-        auto func = it->second;
-        auto numArgs = args.size() - 1;
+        while (this->isAlive and std::getline(this->stream, line)) {
 
-        switch (func.index()) {
-        case 0: // void ()
-            if (numArgs != 0) {
-                std::cerr << "** 0 arguments expected, got " << numArgs << std::endl;
-                return false;
+            auto [function, args] = parseCommand(line);
+
+            bool isArgumentValid = checkArgument(function, args);
+            if (not isArgumentValid) {
+                std::cerr << "** invalid argument" << std::endl;
+                std::cerr << "sdb> ";
+                continue;
             }
-            std::get<0>(func)();
-            break;
-        case 1: // void (uint64_t)
-            if (numArgs != 1) {
-                std::cerr << "** 1 arguments expected, got " << numArgs << std::endl;
-                return false;
+
+            switch (function) {
+            case Function::BREAK: {
+                    addr_t address = std::stoull(args[1], nullptr, 0);
+                    addBreakpoint(address);
+                    break;
+                }
+            case Function::CONT: {
+                    continueInstructions();
+                    break;
+                }
+            case Function::DELETE: {
+                    std::size_t id = std::stoull(args[1], nullptr, 0);
+                    deleteBreakpoint(id);
+                    break;
+                }
+            case Function::DISASM: {
+                    addr_t address = std::stoull(args[1], nullptr, 0);
+                    disassemble(address);
+                    break;
+                }
+            case Function::DUMP: {
+                    addr_t address = std::stoull(args[1], nullptr, 0);
+                    dumpMemory(address);
+                    break;
+                }
+            case Function::EXIT: {
+                    terminate();
+                    break;
+                }
+            case Function::GET: {
+                    string name = args[1];
+                    getRegister(name);
+                    break;
+                }
+            case Function::GETREGS: {
+                    getRegister();
+                    break;
+                }
+            case Function::HELP: {
+                    help();
+                    break;
+                }
+            case Function::LIST: {
+                    listBreakpoint();
+                    break;
+                }
+            case Function::LOAD: {
+                    string program = args[1];
+                    loadProgram(program);
+                    break;
+                }
+            case Function::RUN: {
+                    run();
+                    break;
+                }
+            case Function::VMMAP: {
+                    showMemoryMap();
+                    break;
+                }
+            case Function::SET: {
+                    string name = args[1];
+                    auto value = std::stoull(args[2], nullptr, 0);
+                    setRegister(name, value);
+                    break;
+                }
+            case Function::SI: {
+                    stepInstruction();
+                    break;
+                }
+            case Function::START: {
+                    start();
+                    break;
+                }
+            default:
+                std::cerr << "** command not found: " << args.front() << std::endl;
             }
-            std::get<1>(func)(stoull(args[1], nullptr, 0));
-            break;
-        case 2: // void (const std::string&)
-            if (numArgs != 1) {
-                std::cerr << "** 1 arguments expected, got " << numArgs << std::endl;
-                return false;
-            }
-            std::get<2>(func)(args[1]);
-            break;
-        case 3: // void (const std::string&, uint64_t)
-            if (numArgs != 2) {
-                std::cerr << "** 2 arguments expected, got " << numArgs << std::endl;
-                return false;
-            }
-            std::get<3>(func)(args[1], stoull(args[2], nullptr, 0));
-            break;
-        default:
-            std::cerr << "Debugger function error" << std::endl;
-            std::exit(-1);
-        }
-    }
-    return true;
-}
 
-uint64_t recoverInstruction() {
-
-    auto offset = getRegisterOffset("rip");
-    auto rip = ptrace(PTRACE_PEEKUSER, process, offset, 0);
-
-    auto it = breakpoints.find(rip);
-
-    if (it == breakpoints.end()) {
-        // next instruction is not breakpoint
-        // test whether we are stucked by breakpoint
-        --rip;
-        it = breakpoints.find(rip);
-        if (it == breakpoints.end()) return 0; // neither, return directly
-    }
-
-    auto code = it->second;
-    auto codeInText = ptrace(PTRACE_PEEKTEXT, process, rip, 0);
-    auto codeToRecover = (codeInText & 0xffff'ffff'ffff'ff00) | (code & 0xff); // only recover the byte that is changed to INT3
-
-    if (ptrace(PTRACE_POKETEXT, process, rip, codeToRecover) < 0) errquit("ptrace.POKETEXT@recover");
-
-    return rip;
-}
-
-void putInt3(uint64_t address) {
-    auto code = ptrace(PTRACE_PEEKTEXT, process, address, 0);
-    breakpoints[address] = code;
-
-    auto inserted = (code & 0xffff'ffff'ffff'ff00) | 0xcc;
-    if (ptrace(PTRACE_POKETEXT, process, address, inserted) < 0) errquit("ptrace.POKETEXT@put");
-}
-
-void dbgAddBreakpoint(uint64_t address) {
-
-    if (currentState != State::RUNNING) {
-        std::cerr << "** no programm is currently running" << std::endl;
-        return;
-    }
-
-    putInt3(address);
-}
-
-void dbgContinue() {
-
-    if (currentState != State::RUNNING) {
-        std::cerr << "** no programm is currently running" << std::endl;
-        return;
-    }
-
-    if (auto rip = recoverInstruction(); rip != 0) {
-        if (ptrace(PTRACE_POKEUSER, process, getRegisterOffset("rip"), rip) < 0) errquit("ptrace.POKEUSER");
-
-        if (ptrace(PTRACE_SINGLESTEP, process, 0, 0) < 0) errquit("ptrace.SINGLESTEP");
-        if (!wait_child(process)) NEXT_ROUND();
-
-        putInt3(rip);
-    }
-
-    ptrace(PTRACE_CONT, process, 0, 0);
-    if (!wait_child(process)) NEXT_ROUND();
-
-    ios_flag_saver ifs{ std::cerr };
-    auto rip = ptrace(PTRACE_PEEKUSER, process, getRegisterOffset("rip"), 0);
-    std::cerr << " ** breakpoint @ = " << std::setw(12) << std::hex << rip - 1 << ": " << breakpoints[rip - 1] << std::endl;
-}
-
-void dbgDeleteBreakpoint(uint64_t breakpointID) {
-
-    if (currentState != State::RUNNING) {
-        std::cerr << "** no programm is currently running" << std::endl;
-        return;
-    }
-}
-
-void dbgDisasm(uint64_t address) {
-
-    if (currentState != State::RUNNING) {
-        std::cerr << "** no programm is currently running" << std::endl;
-        return;
-    }
-
-}
-
-void dbgDump(uint64_t address) {
-
-    if (currentState != State::RUNNING) {
-        std::cerr << "** no programm is currently running" << std::endl;
-        return;
-    }
-
-
-    // assumption: 64-bit, little endian
-    for (int i = 0; i < 5; ++i) {
-        ios_flag_saver ifs{ std::cerr };
-        uint64_t buf[2];
-
-        buf[0] = ptrace(PTRACE_PEEKTEXT, process, address, 0);
-        buf[1] = ptrace(PTRACE_PEEKTEXT, process, address + 8, 0);
-
-        auto ptr = reinterpret_cast<uint8_t*>(buf);
-
-        std::cerr << std::setw(12) << std::right << std::hex << address << ":";
-        for (int j = 0; j < 16; ++j) {
-            std::cerr << ' ' << std::setw(2) << std::setfill('0') << std::hex << (static_cast<short>(ptr[j]) & 0xff);
+            if (this->isAlive and this->isSTDIN) std::cerr << "sdb> ";
         }
 
-        std::cerr << "  |";
-        for (int j = 0; j < 16; ++j) {
-            std::cerr << (std::isprint(ptr[j]) ? static_cast<char>(ptr[j]) : '.');
-        }
-        std::cerr << "|" << std::endl;
-
-        address += 16;
+        // reset this
+        if (this->isChildAlive) kill(this->process, SIGKILL);
+        this->isAlive = true;
+        this->isChildAlive = false;
+        state = State::LOADED;
+        process = 0;
     }
 }
 
-void dbgTerminate() {
-    kill(process, SIGKILL);
-    std::exit(0);
-}
-
-void dbgGetRegister(const std::string& registerName) {
-
-    if (currentState != State::RUNNING) {
-        std::cerr << "** no programm is currently running" << std::endl;
-        return;
-    }
-
-    auto offset = getRegisterOffset(registerName);
-
-    uint64_t reg = ptrace(PTRACE_PEEKUSER, process, offset, 0);
-
-    ios_flag_saver ifs{ std::cerr };
-    std::cerr << registerName << " = " << reg << " (0x" << std::hex << reg << ")" << std::endl;
-}
-
-void dbgGetAllRegister() {
-
-    if (currentState != State::RUNNING) {
-        std::cerr << "** no programm is currently running" << std::endl;
-        return;
-    }
-
-    struct user_regs_struct regs;
-    ios_flag_saver ifs{ std::cerr };
-
-    if (ptrace(PTRACE_GETREGS, process, 0, &regs) == 0) {
-        std::cerr << std::left << std::hex;
-        std::cerr << "RAX " << std::setw(16) << regs.rax;
-        std::cerr << " RBX " << std::setw(16) << regs.rbx;
-        std::cerr << " RCX " << std::setw(16) << regs.rcx;
-        std::cerr << " RDX " << std::setw(16) << regs.rdx << std::endl;
-        std::cerr << "R8  " << std::setw(16) << regs.r8;
-        std::cerr << " R9  " << std::setw(16) << regs.r9;
-        std::cerr << " R10 " << std::setw(16) << regs.r10;
-        std::cerr << " R11 " << std::setw(16) << regs.r11 << std::endl;
-        std::cerr << "R12 " << std::setw(16) << regs.r12;
-        std::cerr << " R13 " << std::setw(16) << regs.r13;
-        std::cerr << " R14 " << std::setw(16) << regs.r14;
-        std::cerr << " R15 " << std::setw(16) << regs.r15 << std::endl;
-        std::cerr << "RDI " << std::setw(16) << regs.rdi;
-        std::cerr << " RSI " << std::setw(16) << regs.rsi;
-        std::cerr << " RBP " << std::setw(16) << regs.rbp;
-        std::cerr << " RSP " << std::setw(16) << regs.rsp << std::endl;
-        std::cerr << "RIP " << std::setw(16) << regs.rip;
-        std::cerr << " FLAGS " << std::setw(16) << std::setfill('0') << std::right << regs.eflags << std::endl;
-    }
-}
-
-void dbgHelp() {
-    static constexpr auto helpMessages = {
+void Debugger::help() {
+    static constexpr auto messages = {
         "- break {instruction-address}: add a break point",
         "- cont: continue execution",
         "- delete {break-point-id}: remove a break point",
@@ -298,67 +155,330 @@ void dbgHelp() {
         "- start: start the program and stop at the first instruction"
     };
 
-    for (const auto& message : helpMessages) {
+    for (const auto& message : messages) {
         std::cerr << message << std::endl;
     }
 }
 
-void dbgListBreakpoint() {
-    size_t id{};
-    for (auto [addr, code] : breakpoints) {
-        ios_flag_saver ifs{ std::cerr };
-        std::cerr << std::setw(3) << std::right << id << ':';
-        std::cerr << std::setw(8) << std::right << std::hex << addr << std::endl;
-        ++id;
-    }
+void Debugger::terminate() {
+    if (this->isChildAlive) kill(this->process, SIGKILL);
+    std::exit(0);
 }
 
-void dbgLoadProgram(const std::string& path) {
+void Debugger::loadProgram(const string& program) {
 
-    if (currentState != State::NOT_LOADED) {
+    if (this->state != State::NOT_LOADED) {
         std::cerr << "** program " << quote(program) << " has bee loaded" << std::endl;
         return;
     }
 
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(program, std::ios::binary);
 
-    ELFHeader prefix;
-    file.read(reinterpret_cast<char*>(&prefix), sizeof(ELFHeader));
+    Elf64_Ehdr header;
+    file.read(reinterpret_cast<char*>(&header), sizeof(Elf64_Ehdr));
 
-    if (prefix.executable_class == CLASS64) header = ELF64{};
-    else header = ELF32{};
+    std::cerr << "** program " << quote(program) << " loaded." << format(" entry point %#x", header.e_entry) << std::endl;
 
-    std::visit([&file, &path](auto& elf) {
-        file.seekg(0, std::ios::beg);
-        file.read(reinterpret_cast<char*>(&elf), sizeof(elf));
-        ios_flag_saver ifs{ std::cerr };
-        std::cerr << "** program " << quote(path) << " loaded. entry point 0x" << std::hex << elf.entry_point << std::dec << std::endl;
-        }, header);
+    std::vector<Elf64_Shdr> sectionHeaders(header.e_shnum);
 
-    program = path;
-    currentState = State::LOADED;
+    Elf64_Shdr& shstrtab = sectionHeaders[header.e_shstrndx];
+
+    file.seekg(header.e_shoff, std::ios::beg);
+
+    for (auto& shdr : sectionHeaders) {
+        file.read(reinterpret_cast<char*>(&shdr), sizeof(Elf64_Shdr));
+    }
+
+    string stringTable(shstrtab.sh_size, 0);
+    file.seekg(shstrtab.sh_offset, std::ios::beg);
+    file.read(stringTable.data(), shstrtab.sh_size);
+
+    for (auto shdr : sectionHeaders) {
+        using namespace std::string_literals;
+        if (&stringTable[shdr.sh_name] == ".text"s) {
+            this->textStart = shdr.sh_addr;
+            this->textEnd = shdr.sh_addr + shdr.sh_size;
+            break;
+        }
+    }
+    std::cerr << format("** .text segment: %#x-%#x", this->textStart, this->textEnd) << std::endl;
+
+    program_record = this->program = program;
+    this->state = State::LOADED;
 }
 
-void dbgRun() {
+void Debugger::start() {
 
-    if (currentState == State::NOT_LOADED) {
-        std::cerr << "** no program is loaded" << std::endl;
+    if (this->state == State::NOT_LOADED) {
+        std::cerr << "** no program loaded" << std::endl;
+        return;
+    }
+    if (this->state == State::RUNNING) {
+        std::cerr << "** program " << quote(program) << " is already running" << std::endl;
         return;
     }
 
-    dbgStart();
-    currentState = State::RUNNING;
-    dbgContinue();
+    pid_t pid = fork();
+    if (pid < 0) errquit("fork");
+
+    if (pid == 0) {
+        if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) errquit("PTRACE_TRACEME@start");
+        execlp(this->program.c_str(), this->program.c_str(), 0);
+        errquit("exec");
+    }
+    else {
+        this->process = pid;
+        std::cerr << "** pid " << this->process << std::endl;
+
+        if (not WIFSTOPPED(waitChild())) this->isChildAlive = this->isAlive = false;
+    }
+
+    for (auto [addr, code] : breakpoints) {
+        putInt3(addr);
+    }
+
+    this->isChildAlive = true;
+    this->state = State::RUNNING;
 }
 
-void dbgMemoryMap() {
+void Debugger::run() {
 
-    if (currentState != State::RUNNING) {
-        std::cerr << "** no programm is currently running" << std::endl;
+    if (this->state == State::NOT_LOADED) {
+        std::cerr << "** no program loaded" << std::endl;
         return;
     }
 
-    std::string mmap = "/proc/" + std::to_string(process) + "/maps";
+    start();
+    this->state = State::RUNNING;
+
+    if (ptrace(PTRACE_CONT, this->process, 0, 0) < 0) errquit("PTRACE_CONT@run");
+    if (not WIFSTOPPED(waitChild())) {
+        this->isChildAlive = this->isAlive = false;
+        return;
+    }
+
+    addr_t rip = ptrace(PTRACE_PEEKUSER, process, getRegisterOffset("rip"), 0);
+    printBreakpoint(rip - 1);
+}
+
+void Debugger::continueInstructions() {
+
+    if (this->state != State::RUNNING) {
+        std::cerr << "** the program is not being run" << std::endl;
+        return;
+    }
+
+    if (auto rip = recoverInstruction(); rip != 0) {
+        if (ptrace(PTRACE_POKEUSER, this->process, getRegisterOffset("rip"), rip) < 0) errquit("PTRACE_POKEUSER@cont");
+
+        if (ptrace(PTRACE_SINGLESTEP, this->process, 0, 0) < 0) errquit("PTRACE_SINGLESTEP@cont");
+        if (not WIFSTOPPED(waitChild())) this->isChildAlive = this->isAlive = false;
+
+        putInt3(rip);
+    }
+
+    ptrace(PTRACE_CONT, this->process, 0, 0);
+    if (not WIFSTOPPED(waitChild())) {
+        this->isChildAlive = this->isAlive = false;
+        return;
+    }
+
+    auto rip = ptrace(PTRACE_PEEKUSER, this->process, getRegisterOffset("rip"), 0);
+    printBreakpoint(rip - 1);
+}
+
+void Debugger::stepInstruction() {
+
+    if (this->state != State::RUNNING) {
+        std::cerr << "** the program is not being run" << std::endl;
+        return;
+    }
+
+    if (auto rip = recoverInstruction(); rip != 0) {
+        if (ptrace(PTRACE_POKEUSER, this->process, getRegisterOffset("rip"), rip) < 0) errquit("PTRACE_POKEUSER@si");
+        if (ptrace(PTRACE_SINGLESTEP, this->process, 0, 0) < 0) errquit("PTRACE_SINGLESTEP@si");
+        if (not WIFSTOPPED(waitChild())) this->isChildAlive = this->isAlive = false;
+        putInt3(rip);
+    }
+    else {
+        ptrace(PTRACE_SINGLESTEP, this->process, 0, 0);
+        if (not WIFSTOPPED(waitChild())) this->isChildAlive = this->isAlive = false;
+    }
+
+    auto rip = ptrace(PTRACE_PEEKUSER, this->process, getRegisterOffset("rip"), 0);
+
+    if (breakpoints.find(rip) != breakpoints.end()) {
+        printBreakpoint(rip);
+    }
+}
+
+void Debugger::addBreakpoint(addr_t address) {
+
+    if (this->state != State::RUNNING) {
+        std::cerr << "** the program is not being run" << std::endl;
+        return;
+    }
+
+    putInt3(address);
+}
+
+void Debugger::deleteBreakpoint(std::size_t breakpointID) {
+
+    if (this->state != State::RUNNING) {
+        std::cerr << "** the program is not being run" << std::endl;
+        return;
+    }
+
+    auto it = this->breakpoints.begin();
+
+    for (size_t index{}; index < breakpointID and it != this->breakpoints.end(); ++index) {
+        ++it;
+    }
+
+    if (it == this->breakpoints.end()) {
+        std::cerr << "** invalid breakpoint id" << std::endl;
+        return;
+    }
+
+    auto [address, code] = *it;
+    this->breakpoints.erase(it);
+
+    auto codeInText = ptrace(PTRACE_PEEKTEXT, this->process, address, 0);
+    auto codeToRecover = (codeInText & 0xffff'ffff'ffff'ff00) | (code & 0xff);
+
+    if (ptrace(PTRACE_POKETEXT, this->process, address, codeToRecover) < 0) errquit("PTRACE_POKETEXT@delete");
+    std::cerr << format("** breakpoint %d deleted", breakpointID) << std::endl;
+}
+
+void Debugger::listBreakpoint() {
+    size_t id{};
+    for (auto [address, _] : breakpoints) {
+        std::cerr << format("%3d: %8x", id++, address) << std::endl;
+    }
+}
+
+void Debugger::getRegister() {
+
+    if (this->state != State::RUNNING) {
+        std::cerr << "** the program is not being run" << std::endl;
+        return;
+    }
+
+    struct user_regs_struct regs;
+
+    if (ptrace(PTRACE_GETREGS, process, 0, &regs) == 0) {
+        std::cerr << format("RAX %-16x RBX %-16x RCX %-16x RDX %-16x", regs.rax, regs.rbx, regs.rcx, regs.rdx) << std::endl;
+        std::cerr << format("R8  %-16x R9  %-16x R10 %-16x R11 %-16x", regs.r8, regs.r9, regs.r10, regs.r11) << std::endl;
+        std::cerr << format("R12 %-16x R13 %-16x R14 %-16x R15 %-16x", regs.r12, regs.r13, regs.r14, regs.r15) << std::endl;
+        std::cerr << format("RDI %-16x RSI %-16x RBP %-16x RSP %-16x", regs.rdi, regs.rsi, regs.rbp, regs.rsp) << std::endl;
+        std::cerr << format("RIP %-16x FLAGS %016x", regs.rip, regs.eflags) << std::endl;
+    }
+}
+
+void Debugger::getRegister(const string& name) {
+
+    if (this->state != State::RUNNING) {
+        std::cerr << "** the program is not being run" << std::endl;
+        return;
+    }
+
+    auto offset = getRegisterOffset(name);
+
+    uint64_t reg = ptrace(PTRACE_PEEKUSER, process, offset, 0);
+
+    std::cerr << format("%s = %d (%#x)", name.c_str(), reg, reg) << std::endl;
+}
+
+void Debugger::setRegister(const string& name, uint64_t value) {
+
+    if (this->state != State::RUNNING) {
+        std::cerr << "** the program is not being run" << std::endl;
+        return;
+    }
+
+    auto offset = getRegisterOffset(name);
+    if (ptrace(PTRACE_POKEUSER, process, offset, value) < 0) errquit("PTRACE_POKEUSER@set");
+}
+
+void Debugger::disassemble(addr_t address) {
+
+    if (this->state != State::RUNNING) {
+        std::cerr << "** the program is not being run" << std::endl;
+        return;
+    }
+
+    Disassembler disassembler{ CS_ARCH_X86, CS_MODE_64 };
+
+    for (size_t i = 0; i < 10; ++i) {
+        if (address >= this->textEnd) {
+            std::cerr << "** the address is out of the range of the text segment" << std::endl;
+            break;
+        }
+
+        auto it = breakpoints.find(address);
+
+        auto value = (it == breakpoints.end()) ? ptrace(PTRACE_PEEKTEXT, this->process, address, 0) : it->second;
+
+        std::vector<uint8_t> code;
+        for (int i = 0; i < 8; ++i) {
+            code.push_back(value & 0xff);
+            value >>= 8;
+        }
+
+        auto [instr, nextInstruction] = disassembler.disasm(code, address);
+        auto [addr, bytes, mnemonic, op_str] = instr;
+
+        std::stringstream ss;
+        for (auto byte : bytes) {
+            ss << format(" %02x", static_cast<uint16_t>(byte) & 0xff);
+        }
+
+        std::cerr << format("%12x:%-32s%s\t%s", addr, ss.str().c_str(), mnemonic.c_str(), op_str.c_str()) << std::endl;
+
+        address = nextInstruction;
+    }
+}
+
+void Debugger::dumpMemory(addr_t address) {
+
+    if (this->state != State::RUNNING) {
+        std::cerr << "** the program is not being run" << std::endl;
+        return;
+    }
+
+    // 64-bit, little endian
+    for (int i = 0; i < 5; ++i) {
+        code_t buf[2];
+
+        buf[0] = ptrace(PTRACE_PEEKTEXT, process, address, 0);
+        buf[1] = ptrace(PTRACE_PEEKTEXT, process, address + 8, 0);
+
+        auto ptr = reinterpret_cast<uint8_t*>(buf);
+
+        std::cerr << format("%12x:", address);
+        for (int j = 0; j < 16; ++j) {
+            std::cerr << format(" %02x", static_cast<short>(ptr[j]) & 0xff);
+        }
+
+        std::cerr << "  |";
+        for (int j = 0; j < 16; ++j) {
+            std::cerr << (std::isprint(ptr[j]) ? static_cast<char>(ptr[j]) : '.');
+        }
+        std::cerr << "|" << std::endl;
+
+        address += 16;
+    }
+
+}
+
+void Debugger::showMemoryMap() {
+
+    if (this->state != State::RUNNING) {
+        std::cerr << "** the program is not being run" << std::endl;
+        return;
+    }
+
+    std::string mmap = "/proc/" + std::to_string(this->process) + "/maps";
     std::ifstream file{ mmap };
 
     std::string line;
@@ -375,75 +495,127 @@ void dbgMemoryMap() {
         auto offset = std::stoull(offset_s, nullptr, 16);
         permission.pop_back();
 
-        ios_flag_saver ifs{ std::cerr };
-        std::cerr << std::setw(16) << std::setfill('0') << std::hex << start;
-        std::cerr << '-' << std::setw(16) << std::setfill('0') << std::hex << end;
-        std::cerr << ' ' << permission;
-        std::cerr << ' ' << std::setw(8) << std::setfill(' ') << std::left << std::hex << offset;
-        std::cerr << ' ' << pathname << std::endl;
+        std::cerr << format("%016x-%016x %s %-8x %s", start, end, permission.c_str(), offset, pathname.c_str()) << std::endl;
     }
 }
 
-void dbgSetRegisterValue(const std::string& registerName, uint64_t value) {
+auto Debugger::parseCommand(const string& command) -> std::pair<Function, args_t> {
+    auto args = splitString(command);
 
-    if (currentState != State::RUNNING) {
-        std::cerr << "** no programm is currently running" << std::endl;
-        return;
-    }
+    if (args.empty()) return { Function::UNKNOWN, args };
 
-    auto offset = getRegisterOffset(registerName);
-    if (ptrace(PTRACE_POKEUSER, process, offset, value) < 0) errquit("ptrace@set");
+    auto& cmd = args.front();
+
+    if (cmd == "break" or cmd == "b") return { Function::BREAK, args };
+    if (cmd == "cont" or cmd == "c") return { Function::CONT, args };
+    if (cmd == "delete") return { Function::DELETE, args };
+    if (cmd == "disasm" or cmd == "d") return { Function::DISASM, args };
+    if (cmd == "dump" or cmd == "x") return { Function::DUMP, args };
+    if (cmd == "exit" or cmd == "q") return { Function::EXIT, args };
+    if (cmd == "get" or cmd == "g") return { Function::GET, args };
+    if (cmd == "getregs") return { Function::GETREGS, args };
+    if (cmd == "help" or cmd == "h") return { Function::HELP, args };
+    if (cmd == "list" or cmd == "l") return { Function::LIST, args };
+    if (cmd == "load") return { Function::LOAD, args };
+    if (cmd == "run" or cmd == "r") return { Function::RUN, args };
+    if (cmd == "vmmap" or cmd == "m") return { Function::VMMAP, args };
+    if (cmd == "set" or cmd == "s") return { Function::SET, args };
+    if (cmd == "si") return { Function::SI, args };
+    if (cmd == "start") return { Function::START, args };
+
+    return { Function::UNKNOWN, args };
 }
 
-void dbgStepInstruction() {
+bool Debugger::checkArgument(Function function, const args_t& args) {
+    switch (function) {
+    case Function::UNKNOWN:
+        return false;
 
-    if (currentState != State::RUNNING) {
-        std::cerr << "** no programm is currently running" << std::endl;
-        return;
-    }
+    case Function::SET:
+        return args.size() == 3;
 
-    if (auto rip = recoverInstruction(); rip != 0) {
-        if (ptrace(PTRACE_POKEUSER, process, getRegisterOffset("rip"), rip) < 0) errquit("ptrace.POKEUSER@si");
-        if (ptrace(PTRACE_SINGLESTEP, process, 0, 0) < 0) errquit("ptrace.SINGLESTEP@si");
-        if (!wait_child(process)) NEXT_ROUND();
-        putInt3(rip);
-    }
-    else {
-        ptrace(PTRACE_SINGLESTEP, process, 0, 0);
-        if (!wait_child(process)) NEXT_ROUND();
-    }
+    case Function::LOAD:
+    case Function::BREAK:
+    case Function::DELETE:
+    case Function::GET:
+    case Function::DISASM:
+    case Function::DUMP:
+        return args.size() == 2;
 
-    ios_flag_saver ifs{ std::cerr };
-
-    auto rip = ptrace(PTRACE_PEEKUSER, process, getRegisterOffset("rip"), 0);
-    if (auto it = breakpoints.find(rip); it != breakpoints.end()) {
-        std::cerr << " ** breakpoint @ = " << std::setw(12) << std::hex << it->first << ": " << it->second << std::endl;
+    default:
+        return args.size() == 1;
     }
 }
 
-void dbgStart() {
+auto Debugger::recoverInstruction() -> addr_t {
 
-    if (currentState == State::NOT_LOADED) {
-        std::cerr << "** no program loaded" << std::endl;
-        return;
-    }
-    if (currentState == State::RUNNING) {
-        std::cerr << "** program " << quote(program) << " is already running" << std::endl;
-        return;
-    }
+    auto offset = getRegisterOffset("rip");
+    auto rip = ptrace(PTRACE_PEEKUSER, this->process, offset, 0);
 
-    process = fork();
-    if (process < 0) errquit("fork");
+    auto it = breakpoints.find(rip);
 
-    if (process == 0) {
-        if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) errquit("ptrace.TRACEME");
-        execlp(program.c_str(), program.c_str(), 0);
-        errquit("exec");
-    }
-    else {
-        std::cerr << "** pid " << process << std::endl;
-        if (!wait_child(process)) NEXT_ROUND();
+    if (it == breakpoints.end()) {
+        // next instruction is not breakpoint
+        // test if we are stucked by a breakpoint
+        --rip;
+        it = breakpoints.find(rip);
+        if (it == breakpoints.end()) return 0; // neither, return directly
     }
 
-    currentState = State::RUNNING;
+    auto code = it->second;
+    auto codeInText = ptrace(PTRACE_PEEKTEXT, process, rip, 0);
+    auto codeToRecover = (codeInText & 0xffff'ffff'ffff'ff00) | (code & 0xff); // only recover the byte that is changed to INT3
+
+    if (ptrace(PTRACE_POKETEXT, process, rip, codeToRecover) < 0) errquit("PTRACE_POKETEXT@recover");
+
+    return rip;
+
+}
+
+void Debugger::putInt3(addr_t address) {
+
+    auto code = ptrace(PTRACE_PEEKTEXT, process, address, 0);
+    breakpoints[address] = code;
+
+    auto inserted = (code & 0xffff'ffff'ffff'ff00) | 0xcc;
+    if (ptrace(PTRACE_POKETEXT, process, address, inserted) < 0) errquit("PTRACE_POKETEXT@put");
+
+}
+
+int Debugger::waitChild() {
+    int status;
+    if (waitpid(this->process, &status, 0) < 0) errquit("wait");
+
+    if (WIFEXITED(status)) {
+        std::cerr << "** child process " << this->process << " terminiated normally (code " << WEXITSTATUS(status) << ")" << std::endl;
+    }
+    if (WIFSIGNALED(status)) {
+        std::cerr << "** child process " << this->process << " terminiated abnormally (code " << WEXITSTATUS(status) << ")" << std::endl;
+    }
+
+    return status;
+}
+
+void Debugger::printBreakpoint(addr_t address) {
+
+    code_t code = breakpoints[address];
+
+    Disassembler disassembler{ CS_ARCH_X86, CS_MODE_64 };
+
+    Disassembler::code_t code_disasm;
+    for (int i = 0; i < 8; ++i) {
+        code_disasm.push_back(code & 0xff);
+        code >>= 8;
+    }
+
+    auto [instr, _] = disassembler.disasm(code_disasm, address);
+
+    auto [addr, bytes, mnemonic, op_str] = instr;
+
+    std::stringstream ss;
+    for (auto byte : bytes) {
+        ss << format(" %02x", static_cast<uint16_t>(byte) & 0xff);
+    }
+
+    std::cerr << format("** breakpoint @%12x:%-32s%s\t%s", addr, ss.str().c_str(), mnemonic.c_str(), op_str.c_str()) << std::endl;
 }
