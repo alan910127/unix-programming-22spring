@@ -19,7 +19,7 @@
 
 class Debugger {
 public:
-    using addr_t = std::uint64_t;
+    using addr_t = uint64_t;
     using code_t = uint64_t;
     using args_t = std::vector<std::string>;
     using string = std::string;
