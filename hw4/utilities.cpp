@@ -41,7 +41,7 @@ std::pair<std::string, std::string> handleArguments(const std::vector<std::strin
                 usage(args.front(), "too many arguments");
             }
 
-            if (access(it->c_str(), R_OK | W_OK | X_OK) < 0) errquit("program");
+            if (access(it->c_str(), R_OK | X_OK) < 0) errquit("program");
             result.second = *it;
         }
     }
