@@ -2,7 +2,6 @@
 
 extern std::string program_record;
 
-
 Debugger::Debugger() :
     isAlive{ true }, isChildAlive{ false }, isSTDIN{ true }, stream{ std::cin },
     state{ State::NOT_LOADED }, process{}, program{}, breakpoints{} {
@@ -258,7 +257,8 @@ void Debugger::run() {
     }
 
     addr_t rip = ptrace(PTRACE_PEEKUSER, process, getRegisterOffset("rip"), 0);
-    printBreakpoint(rip - 1);
+    if (ptrace(PTRACE_POKEUSER, process, getRegisterOffset("rip"), --rip) < 0) errquit("PTRACE_POKEUSER@run");
+    printBreakpoint(rip);
 }
 
 void Debugger::continueInstructions() {
@@ -284,7 +284,8 @@ void Debugger::continueInstructions() {
     }
 
     auto rip = ptrace(PTRACE_PEEKUSER, this->process, getRegisterOffset("rip"), 0);
-    printBreakpoint(rip - 1);
+    if (ptrace(PTRACE_POKEUSER, process, getRegisterOffset("rip"), --rip) < 0) errquit("PTRACE_POKEUSER@run");
+    printBreakpoint(rip);
 }
 
 void Debugger::stepInstruction() {
@@ -353,7 +354,7 @@ void Debugger::deleteBreakpoint(std::size_t breakpointID) {
 void Debugger::listBreakpoint() {
     size_t id{};
     for (auto [address, _] : breakpoints) {
-        std::cerr << format("%3d: %8x", id++, address) << std::endl;
+        std::cerr << format("%3d: %8lx", id++, address) << std::endl;
     }
 }
 
@@ -367,11 +368,11 @@ void Debugger::getRegister() {
     struct user_regs_struct regs;
 
     if (ptrace(PTRACE_GETREGS, process, 0, &regs) == 0) {
-        std::cerr << format("RAX %-16x RBX %-16x RCX %-16x RDX %-16x", regs.rax, regs.rbx, regs.rcx, regs.rdx) << std::endl;
-        std::cerr << format("R8  %-16x R9  %-16x R10 %-16x R11 %-16x", regs.r8, regs.r9, regs.r10, regs.r11) << std::endl;
-        std::cerr << format("R12 %-16x R13 %-16x R14 %-16x R15 %-16x", regs.r12, regs.r13, regs.r14, regs.r15) << std::endl;
-        std::cerr << format("RDI %-16x RSI %-16x RBP %-16x RSP %-16x", regs.rdi, regs.rsi, regs.rbp, regs.rsp) << std::endl;
-        std::cerr << format("RIP %-16x FLAGS %016x", regs.rip, regs.eflags) << std::endl;
+        std::cerr << format("RAX %-16lx RBX %-16lx RCX %-16lx RDX %-16lx", regs.rax, regs.rbx, regs.rcx, regs.rdx) << std::endl;
+        std::cerr << format("R8  %-16lx R9  %-16lx R10 %-16lx R11 %-16lx", regs.r8, regs.r9, regs.r10, regs.r11) << std::endl;
+        std::cerr << format("R12 %-16lx R13 %-16lx R14 %-16lx R15 %-16lx", regs.r12, regs.r13, regs.r14, regs.r15) << std::endl;
+        std::cerr << format("RDI %-16lx RSI %-16lx RBP %-16lx RSP %-16lx", regs.rdi, regs.rsi, regs.rbp, regs.rsp) << std::endl;
+        std::cerr << format("RIP %-16lx FLAGS %016lx", regs.rip, regs.eflags) << std::endl;
     }
 }
 
@@ -386,7 +387,7 @@ void Debugger::getRegister(const string& name) {
 
     uint64_t reg = ptrace(PTRACE_PEEKUSER, process, offset, 0);
 
-    std::cerr << format("%s = %d (%#x)", name.c_str(), reg, reg) << std::endl;
+    std::cerr << format("%s = %d (%#lx)", name.c_str(), reg, reg) << std::endl;
 }
 
 void Debugger::setRegister(const string& name, uint64_t value) {
@@ -433,7 +434,7 @@ void Debugger::disassemble(addr_t address) {
             ss << format(" %02x", static_cast<uint16_t>(byte) & 0xff);
         }
 
-        std::cerr << format("%12x:%-32s%s\t%s", addr, ss.str().c_str(), mnemonic.c_str(), op_str.c_str()) << std::endl;
+        std::cerr << format("%12lx:%-36s%-10s%s", addr, ss.str().c_str(), mnemonic.c_str(), op_str.c_str()) << std::endl;
 
         address = nextInstruction;
     }
@@ -455,7 +456,7 @@ void Debugger::dumpMemory(addr_t address) {
 
         auto ptr = reinterpret_cast<uint8_t*>(buf);
 
-        std::cerr << format("%12x:", address);
+        std::cerr << format("%12lx:", address);
         for (int j = 0; j < 16; ++j) {
             std::cerr << format(" %02x", static_cast<short>(ptr[j]) & 0xff);
         }
@@ -484,18 +485,15 @@ void Debugger::showMemoryMap() {
     std::string line;
     while (std::getline(file, line)) {
         std::stringstream ss{ line };
-        std::string address, permission, offset_s, dev, pathname;
-        uint64_t inode;
+        char delim;
+        addr_t start, end;
+        std::string permission, dev, pathname;
+        uint64_t inode, offset;
 
-        ss >> address >> permission >> offset_s >> dev >> inode >> pathname;
-
-        size_t idx;
-        auto start = std::stoull(address, &idx, 16);
-        auto end = std::stoull(address.substr(idx + 1), nullptr, 16);
-        auto offset = std::stoull(offset_s, nullptr, 16);
+        ss >> std::hex >> start >> delim >> end >> permission >> offset >> dev >> std::dec >> inode >> pathname;
         permission.pop_back();
 
-        std::cerr << format("%016x-%016x %s %-8x %s", start, end, permission.c_str(), offset, pathname.c_str()) << std::endl;
+        std::cerr << format("%016lx-%016lx %s %-8x %s", start, end, permission.c_str(), offset, pathname.c_str()) << std::endl;
     }
 }
 
@@ -554,13 +552,7 @@ auto Debugger::recoverInstruction() -> addr_t {
 
     auto it = breakpoints.find(rip);
 
-    if (it == breakpoints.end()) {
-        // next instruction is not breakpoint
-        // test if we are stucked by a breakpoint
-        --rip;
-        it = breakpoints.find(rip);
-        if (it == breakpoints.end()) return 0; // neither, return directly
-    }
+    if (it == breakpoints.end()) return 0;
 
     auto code = it->second;
     auto codeInText = ptrace(PTRACE_PEEKTEXT, process, rip, 0);
@@ -617,5 +609,5 @@ void Debugger::printBreakpoint(addr_t address) {
         ss << format(" %02x", static_cast<uint16_t>(byte) & 0xff);
     }
 
-    std::cerr << format("** breakpoint @%12x:%-32s%s\t%s", addr, ss.str().c_str(), mnemonic.c_str(), op_str.c_str()) << std::endl;
+    std::cerr << format("** breakpoint @%12lx:%-32s%s\t%s", addr, ss.str().c_str(), mnemonic.c_str(), op_str.c_str()) << std::endl;
 }
