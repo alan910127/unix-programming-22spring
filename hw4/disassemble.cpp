@@ -5,7 +5,7 @@ Disassembler::Disassembler(cs_arch arch, cs_mode mode) : handle{} {
 }
 
 Disassembler::~Disassembler() {
-    cs_close(&handle);
+    cs_close(&(this->handle));
 }
 
 auto Disassembler::disasm(const code_t& code, addr_t address) -> std::pair<instr_t, addr_t> {
