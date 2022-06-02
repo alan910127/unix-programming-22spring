@@ -42,7 +42,7 @@ void Debugger::mainLoop() {
             bool isArgumentValid = checkArgument(function, args);
             if (not isArgumentValid) {
                 std::cerr << "** invalid argument" << std::endl;
-                std::cerr << "sdb> ";
+                if (this->isSTDIN) std::cerr << "sdb> ";
                 continue;
             }
 

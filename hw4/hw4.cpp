@@ -1,4 +1,4 @@
-#include "hw4.hpp"
+#include "debugger.hpp"
 
 std::string program_record;
 
@@ -14,10 +14,10 @@ int main(int argc, char** argv) {
 
     if (script.empty()) {
         if (program_record.empty()) {
-            debugger = std::make_unique<Debugger>(std::cin);
+            debugger = std::make_unique<Debugger>();
         }
         else {
-            debugger = std::make_unique<Debugger>(program_record, std::cin);
+            debugger = std::make_unique<Debugger>(program_record);
         }
         debugger->mainLoop();
     }
