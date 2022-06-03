@@ -31,7 +31,7 @@ Debugger::~Debugger() {
 void Debugger::mainLoop() {
 
     while (this->stream) {
-        if (this->isSTDIN) std::cerr << "sdb> ";
+        if (this->isSTDIN) std::cout << "sdb> ";
         string line;
 
         while (this->isAlive and std::getline(this->stream, line)) {
@@ -40,8 +40,7 @@ void Debugger::mainLoop() {
 
             bool isArgumentValid = checkArgument(function, args);
             if (not isArgumentValid) {
-                std::cerr << "** invalid argument" << std::endl;
-                if (this->isSTDIN) std::cerr << "sdb> ";
+                if (this->isSTDIN) std::cout << "sdb> ";
                 continue;
             }
 
@@ -119,10 +118,10 @@ void Debugger::mainLoop() {
                     break;
                 }
             default:
-                std::cerr << "** command not found: " << args.front() << std::endl;
+                std::cout << "** unknown command: " << quote(args.front()) << std::endl;
             }
 
-            if (this->isAlive and this->isSTDIN) std::cerr << "sdb> ";
+            if (this->isAlive and this->isSTDIN) std::cout << "sdb> ";
         }
 
         // reset this
@@ -155,7 +154,7 @@ void Debugger::help() {
     };
 
     for (const auto& message : messages) {
-        std::cerr << message << std::endl;
+        std::cout << message << std::endl;
     }
 }
 
@@ -167,7 +166,7 @@ void Debugger::terminate() {
 void Debugger::loadProgram(const string& program) {
 
     if (this->state != State::NOT_LOADED) {
-        std::cerr << "** program " << quote(program) << " has bee loaded" << std::endl;
+        std::cout << "** program " << quote(program) << " has bee loaded" << std::endl;
         return;
     }
 
@@ -176,7 +175,7 @@ void Debugger::loadProgram(const string& program) {
     Elf64_Ehdr header;
     file.read(reinterpret_cast<char*>(&header), sizeof(Elf64_Ehdr));
 
-    std::cerr << "** program " << quote(program) << " loaded." << format(" entry point %#x", header.e_entry) << std::endl;
+    std::cout << "** program " << quote(program) << " loaded." << format(" entry point %#x", header.e_entry) << std::endl;
 
     std::vector<Elf64_Shdr> sectionHeaders(header.e_shnum);
 
@@ -200,7 +199,7 @@ void Debugger::loadProgram(const string& program) {
             break;
         }
     }
-    std::cerr << format("** .text segment: %#x-%#x", this->textStart, this->textEnd) << std::endl;
+    std::cout << format("** .text segment: %#x-%#x", this->textStart, this->textEnd) << std::endl;
 
     program_record = this->program = program;
     this->state = State::LOADED;
@@ -209,11 +208,11 @@ void Debugger::loadProgram(const string& program) {
 void Debugger::start() {
 
     if (this->state == State::NOT_LOADED) {
-        std::cerr << "** no program loaded" << std::endl;
+        std::cout << "** no program loaded" << std::endl;
         return;
     }
     if (this->state == State::RUNNING) {
-        std::cerr << "** program " << quote(program) << " is already running" << std::endl;
+        std::cout << "** program " << quote(program) << " is already running" << std::endl;
         return;
     }
 
@@ -227,7 +226,7 @@ void Debugger::start() {
     }
     else {
         this->process = pid;
-        std::cerr << "** pid " << this->process << std::endl;
+        std::cout << "** pid " << this->process << std::endl;
 
         if (not WIFSTOPPED(waitChild())) this->isChildAlive = this->isAlive = false;
     }
@@ -243,7 +242,7 @@ void Debugger::start() {
 void Debugger::run() {
 
     if (this->state == State::NOT_LOADED) {
-        std::cerr << "** no program loaded" << std::endl;
+        std::cout << "** no program loaded" << std::endl;
         return;
     }
 
@@ -264,7 +263,7 @@ void Debugger::run() {
 void Debugger::continueInstructions() {
 
     if (this->state != State::RUNNING) {
-        std::cerr << "** the program is not being run" << std::endl;
+        std::cout << "** the program is not being run" << std::endl;
         return;
     }
 
@@ -291,7 +290,7 @@ void Debugger::continueInstructions() {
 void Debugger::stepInstruction() {
 
     if (this->state != State::RUNNING) {
-        std::cerr << "** the program is not being run" << std::endl;
+        std::cout << "** the program is not being run" << std::endl;
         return;
     }
 
@@ -316,7 +315,7 @@ void Debugger::stepInstruction() {
 void Debugger::addBreakpoint(addr_t address) {
 
     if (this->state != State::RUNNING) {
-        std::cerr << "** the program is not being run" << std::endl;
+        std::cout << "** the program is not being run" << std::endl;
         return;
     }
 
@@ -326,7 +325,7 @@ void Debugger::addBreakpoint(addr_t address) {
 void Debugger::deleteBreakpoint(std::size_t breakpointID) {
 
     if (this->state != State::RUNNING) {
-        std::cerr << "** the program is not being run" << std::endl;
+        std::cout << "** the program is not being run" << std::endl;
         return;
     }
 
@@ -337,7 +336,7 @@ void Debugger::deleteBreakpoint(std::size_t breakpointID) {
     }
 
     if (it == this->breakpoints.end()) {
-        std::cerr << "** invalid breakpoint id" << std::endl;
+        std::cout << "** invalid breakpoint id" << std::endl;
         return;
     }
 
@@ -348,38 +347,38 @@ void Debugger::deleteBreakpoint(std::size_t breakpointID) {
     auto codeToRecover = (codeInText & 0xffff'ffff'ffff'ff00) | (code & 0xff);
 
     if (ptrace(PTRACE_POKETEXT, this->process, address, codeToRecover) < 0) errquit("PTRACE_POKETEXT@delete");
-    std::cerr << format("** breakpoint %d deleted", breakpointID) << std::endl;
+    std::cout << format("** breakpoint %d deleted", breakpointID) << std::endl;
 }
 
 void Debugger::listBreakpoint() {
     size_t id{};
     for (auto [address, _] : breakpoints) {
-        std::cerr << format("%3d: %8lx", id++, address) << std::endl;
+        std::cout << format("%3d: %8lx", id++, address) << std::endl;
     }
 }
 
 void Debugger::getRegister() {
 
     if (this->state != State::RUNNING) {
-        std::cerr << "** the program is not being run" << std::endl;
+        std::cout << "** the program is not being run" << std::endl;
         return;
     }
 
     struct user_regs_struct regs;
 
     if (ptrace(PTRACE_GETREGS, process, 0, &regs) == 0) {
-        std::cerr << format("RAX %-16lx RBX %-16lx RCX %-16lx RDX %-16lx", regs.rax, regs.rbx, regs.rcx, regs.rdx) << std::endl;
-        std::cerr << format("R8  %-16lx R9  %-16lx R10 %-16lx R11 %-16lx", regs.r8, regs.r9, regs.r10, regs.r11) << std::endl;
-        std::cerr << format("R12 %-16lx R13 %-16lx R14 %-16lx R15 %-16lx", regs.r12, regs.r13, regs.r14, regs.r15) << std::endl;
-        std::cerr << format("RDI %-16lx RSI %-16lx RBP %-16lx RSP %-16lx", regs.rdi, regs.rsi, regs.rbp, regs.rsp) << std::endl;
-        std::cerr << format("RIP %-16lx FLAGS %016lx", regs.rip, regs.eflags) << std::endl;
+        std::cout << format("RAX %-16lx RBX %-16lx RCX %-16lx RDX %-16lx", regs.rax, regs.rbx, regs.rcx, regs.rdx) << std::endl;
+        std::cout << format("R8  %-16lx R9  %-16lx R10 %-16lx R11 %-16lx", regs.r8, regs.r9, regs.r10, regs.r11) << std::endl;
+        std::cout << format("R12 %-16lx R13 %-16lx R14 %-16lx R15 %-16lx", regs.r12, regs.r13, regs.r14, regs.r15) << std::endl;
+        std::cout << format("RDI %-16lx RSI %-16lx RBP %-16lx RSP %-16lx", regs.rdi, regs.rsi, regs.rbp, regs.rsp) << std::endl;
+        std::cout << format("RIP %-16lx FLAGS %016lx", regs.rip, regs.eflags) << std::endl;
     }
 }
 
 void Debugger::getRegister(const string& name) {
 
     if (this->state != State::RUNNING) {
-        std::cerr << "** the program is not being run" << std::endl;
+        std::cout << "** the program is not being run" << std::endl;
         return;
     }
 
@@ -387,13 +386,13 @@ void Debugger::getRegister(const string& name) {
 
     uint64_t reg = ptrace(PTRACE_PEEKUSER, process, offset, 0);
 
-    std::cerr << format("%s = %d (%#lx)", name.c_str(), reg, reg) << std::endl;
+    std::cout << format("%s = %d (%#lx)", name.c_str(), reg, reg) << std::endl;
 }
 
 void Debugger::setRegister(const string& name, uint64_t value) {
 
     if (this->state != State::RUNNING) {
-        std::cerr << "** the program is not being run" << std::endl;
+        std::cout << "** the program is not being run" << std::endl;
         return;
     }
 
@@ -404,7 +403,7 @@ void Debugger::setRegister(const string& name, uint64_t value) {
 void Debugger::disassemble(addr_t address) {
 
     if (this->state != State::RUNNING) {
-        std::cerr << "** the program is not being run" << std::endl;
+        std::cout << "** the program is not being run" << std::endl;
         return;
     }
 
@@ -412,7 +411,7 @@ void Debugger::disassemble(addr_t address) {
 
     for (size_t i = 0; i < 10; ++i) {
         if (address >= this->textEnd) {
-            std::cerr << "** the address is out of the range of the text segment" << std::endl;
+            std::cout << "** the address is out of the range of the text segment" << std::endl;
             break;
         }
 
@@ -434,7 +433,7 @@ void Debugger::disassemble(addr_t address) {
             ss << format(" %02x", static_cast<uint16_t>(byte) & 0xff);
         }
 
-        std::cerr << format("%12lx:%-36s%-10s%s", addr, ss.str().c_str(), mnemonic.c_str(), op_str.c_str()) << std::endl;
+        std::cout << format("%12lx:%-36s%-10s%s", addr, ss.str().c_str(), mnemonic.c_str(), op_str.c_str()) << std::endl;
 
         address = nextInstruction;
     }
@@ -443,7 +442,7 @@ void Debugger::disassemble(addr_t address) {
 void Debugger::dumpMemory(addr_t address) {
 
     if (this->state != State::RUNNING) {
-        std::cerr << "** the program is not being run" << std::endl;
+        std::cout << "** the program is not being run" << std::endl;
         return;
     }
 
@@ -456,16 +455,16 @@ void Debugger::dumpMemory(addr_t address) {
 
         auto ptr = reinterpret_cast<uint8_t*>(buf);
 
-        std::cerr << format("%12lx:", address);
+        std::cout << format("%12lx:", address);
         for (int j = 0; j < 16; ++j) {
-            std::cerr << format(" %02x", static_cast<short>(ptr[j]) & 0xff);
+            std::cout << format(" %02x", static_cast<short>(ptr[j]) & 0xff);
         }
 
-        std::cerr << "  |";
+        std::cout << "  |";
         for (int j = 0; j < 16; ++j) {
-            std::cerr << (std::isprint(ptr[j]) ? static_cast<char>(ptr[j]) : '.');
+            std::cout << (std::isprint(ptr[j]) ? static_cast<char>(ptr[j]) : '.');
         }
-        std::cerr << "|" << std::endl;
+        std::cout << "|" << std::endl;
 
         address += 16;
     }
@@ -475,7 +474,7 @@ void Debugger::dumpMemory(addr_t address) {
 void Debugger::showMemoryMap() {
 
     if (this->state != State::RUNNING) {
-        std::cerr << "** the program is not being run" << std::endl;
+        std::cout << "** the program is not being run" << std::endl;
         return;
     }
 
@@ -493,7 +492,7 @@ void Debugger::showMemoryMap() {
         ss >> std::hex >> start >> delim >> end >> permission >> offset >> dev >> std::dec >> inode >> pathname;
         permission.pop_back();
 
-        std::cerr << format("%016lx-%016lx %s %-8x %s", start, end, permission.c_str(), offset, pathname.c_str()) << std::endl;
+        std::cout << format("%016lx-%016lx %s %-8x %s", start, end, permission.c_str(), offset, pathname.c_str()) << std::endl;
     }
 }
 
@@ -525,24 +524,119 @@ auto Debugger::parseCommand(const string& command) -> std::pair<Function, args_t
 }
 
 bool Debugger::checkArgument(Function function, const args_t& args) {
-    switch (function) {
-    case Function::UNKNOWN:
-        return false;
 
-    case Function::SET:
-        return args.size() == 3;
+    if (args.empty()) return false;
+
+    auto num = args.size() - 1;
+
+    switch (function) {
+    case Function::BREAK:
+        if (num == 1) return true;
+
+        if (num < 1) std::cout << "** missing breakpoint address" << std::endl;
+        else std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::CONT:
+        if (num == 0) return true;
+
+        std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::DELETE:
+        if (num == 1) return true;
+
+        if (num < 1) std::cout << "** missing breakpoint id" << std::endl;
+        else std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::DISASM:
+        if (num == 1) return true;
+
+        if (num < 1) std::cout << "** missing diassemble address" << std::endl;
+        else std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::DUMP:
+        if (num == 1) return true;
+
+        if (num < 1) std::cout << "** missing dump address" << std::endl;
+        else std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::EXIT:
+        if (num == 0) return true;
+
+        std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::GET:
+        if (num == 1) return true;
+
+        if (num < 1) std::cout << "** missing register name" << std::endl;
+        else std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::GETREGS:
+        if (num == 0) return true;
+
+        std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::HELP:
+        if (num == 0) return true;
+
+        std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::LIST:
+        if (num == 0) return true;
+
+        std::cout << "** too many arguments" << std::endl;
+        break;
 
     case Function::LOAD:
-    case Function::BREAK:
-    case Function::DELETE:
-    case Function::GET:
-    case Function::DISASM:
-    case Function::DUMP:
-        return args.size() == 2;
+        if (num == 1) return true;
+
+        if (num < 1) std::cout << "** missing program name" << std::endl;
+        else std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::RUN:
+        if (num == 0) return true;
+
+        std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::VMMAP:
+        if (num == 0) return true;
+
+        std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::SET:
+        if (num == 2) return true;
+
+        if (num < 2) std::cout << "** missing register name or value" << std::endl;
+        else std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::SI:
+        if (num == 0) return true;
+
+        std::cout << "** too many arguments" << std::endl;
+        break;
+
+    case Function::START:
+        if (num == 0) return true;
+
+        std::cout << "** too many arguments" << std::endl;
+        break;
 
     default:
-        return args.size() == 1;
+        std::cout << "** unknown command: " << quote(args.front()) << std::endl;
     }
+    return false;
 }
 
 auto Debugger::recoverInstruction() -> addr_t {
@@ -579,10 +673,10 @@ int Debugger::waitChild() {
     if (waitpid(this->process, &status, 0) < 0) errquit("wait");
 
     if (WIFEXITED(status)) {
-        std::cerr << "** child process " << this->process << " terminiated normally (code " << WEXITSTATUS(status) << ")" << std::endl;
+        std::cout << "** child process " << this->process << " terminiated normally (code " << WEXITSTATUS(status) << ")" << std::endl;
     }
     if (WIFSIGNALED(status)) {
-        std::cerr << "** child process " << this->process << " terminiated abnormally (code " << WEXITSTATUS(status) << ")" << std::endl;
+        std::cout << "** child process " << this->process << " terminiated abnormally (code " << WEXITSTATUS(status) << ")" << std::endl;
     }
 
     return status;
@@ -609,5 +703,5 @@ void Debugger::printBreakpoint(addr_t address) {
         ss << format(" %02x", static_cast<uint16_t>(byte) & 0xff);
     }
 
-    std::cerr << format("** breakpoint @%12lx:%-32s%s\t%s", addr, ss.str().c_str(), mnemonic.c_str(), op_str.c_str()) << std::endl;
+    std::cout << format("** breakpoint @%12lx:%-32s%s\t%s", addr, ss.str().c_str(), mnemonic.c_str(), op_str.c_str()) << std::endl;
 }
