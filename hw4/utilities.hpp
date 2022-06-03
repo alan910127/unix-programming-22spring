@@ -41,10 +41,10 @@ ptrdiff_t getRegisterOffset(const std::string& registerName);
 
 template<class... Args>
 std::string format(const std::string& fmt, Args... args) {
-    int ssize{ std::snprintf(nullptr, 0, fmt.c_str(), args...) + 1 };
+    auto ssize{ std::snprintf(nullptr, 0, fmt.c_str(), args...) + 1 };
     if (ssize <= 0) return std::string{};
 
-    size_t size{ static_cast<size_t>(ssize) };
+    std::size_t size{ static_cast<std::size_t>(ssize) };
 
     auto buf{ std::make_unique<char[]>(size) };
     std::snprintf(buf.get(), size, fmt.c_str(), args...);

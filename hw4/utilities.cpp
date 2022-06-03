@@ -8,7 +8,7 @@ ios_flag_saver::~ios_flag_saver() { stream.copyfmt(state); }
 
 void usage(const std::string& executable, const std::string& message) {
     std::cerr << "usage: " << executable << " [-s script] [program]" << std::endl;
-    std::cerr << message << std::endl;
+    std::cerr << "error: " << message << std::endl;
     std::exit(-1);
 }
 
@@ -20,7 +20,7 @@ std::pair<std::string, std::string> handleArguments(const std::vector<std::strin
     for (auto it = std::next(args.begin()); it != args.end(); ++it) {
         if (*it == "-s") {
             if (++it == args.end()) {
-                usage(args.front(), "'-s' option is given but no script provided.");
+                usage(args.front(), "missing script name after '-s'");
             }
 
             if (access(it->c_str(), R_OK) < 0) errquit("script");
@@ -28,12 +28,8 @@ std::pair<std::string, std::string> handleArguments(const std::vector<std::strin
         }
         else if (it->find('-') == 0) {
             std::stringstream ss;
-            ss << "Unknown option: " << std::quoted(*it, '\'');
-
-            std::string message;
-            ss >> message;
-
-            usage(args.front(), message.c_str());
+            ss << "unknown option: " << quote(*it);
+            usage(args.front(), ss.str());
         }
         else {
 
@@ -94,7 +90,7 @@ ptrdiff_t getRegisterOffset(const std::string& registerName) {
     else if (iequals(registerName, "rbp")) offset = offsetof(user_regs_struct, rbp);
     else if (iequals(registerName, "rsp")) offset = offsetof(user_regs_struct, rsp);
     else if (iequals(registerName, "rip")) offset = offsetof(user_regs_struct, rip);
-    else std::cerr << "** unknown register" << std::endl;
+    else std::cout << "** unknown register: " << quote(registerName) << std::endl;
 
     return offset;
 }
