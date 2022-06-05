@@ -3,18 +3,9 @@
 
 #include <iostream>
 #include <iomanip>
-#include <cstdlib>
 #include <string>
+#include <memory>
 #include <vector>
-#include <fstream>
-#include <algorithm>
-
-#include <unistd.h>
-#include <assert.h>
-#include <sys/wait.h>
-#include <sys/types.h>
-#include <sys/ptrace.h>
-#include <sys/user.h>
 
 #define errquit(msg) { std::perror(msg); std::exit(-1); }
 

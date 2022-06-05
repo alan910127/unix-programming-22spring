@@ -1,5 +1,13 @@
 #include "utilities.hpp"
-#include "debugger.hpp"
+
+#include <iostream>
+#include <iomanip>
+#include <string>
+#include <sstream>
+
+#include <unistd.h>
+#include <sys/user.h>
+
 
 ios_flag_saver::ios_flag_saver(std::ostream& _stream) : stream{ _stream }, state{ nullptr } {
     state.copyfmt(stream);

@@ -1,4 +1,16 @@
 #include "debugger.hpp"
+#include "utilities.hpp"
+#include "disassemble.hpp"
+
+#include <fstream>
+
+#include <elf.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/user.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/ptrace.h>
 
 extern std::string program_record;
 

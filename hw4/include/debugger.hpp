@@ -2,20 +2,9 @@
 #define _DEBUGGER_HPP
 
 #include <iostream>
+#include <vector>
 #include <string>
-#include <variant>
-#include <memory>
 #include <map>
-
-#include <elf.h>
-#include <unistd.h>
-#include <sys/ptrace.h>
-#include <sys/user.h>
-
-#include <capstone/capstone.h>
-
-#include "utilities.hpp"
-#include "disassemble.hpp"
 
 class Debugger {
 public:
